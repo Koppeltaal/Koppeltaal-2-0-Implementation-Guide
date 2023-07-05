@@ -9,6 +9,25 @@ The Koppeltaal 2.0 implementation guide provides a guide for engineers, architec
 ## Scope and domain
 Depending on your application architecture, you must be aware that Koppeltaal 2.0 is deployed in the context of a domain. In case of a multi-tenant solution, you must be aware of the fact that most of the things you need will be domain specific and the architecture you choose must cater for this. If you are starting your application architecture from scratch you might want to consider a deployment-per-domain strategy and simplify your application architecture. However, such e per-domain deployment strategy might hinder the replication of content between installations. 
 
+## Changes from 1.x
+The aim of Koppeltaal 2.0 is to simplify things and align to standards. The largest change is to switch from a message bus architecture to a single truth FHIR resource service where information is exchanged. The push aspect of the message bus architecture is replaced by a subscription model. The major FHIR change is the switch from FHIR DSTU3 to FHIR R4.
+
+## Standards, standards, and standards
+The Koppeltaal 2.0 standard in is core is composed of many other open standards, shown in the table below.
+
+| Standard                                                                                         | Use                                    |
+|--------------------------------------------------------------------------------------------------|----------------------------------------|
+| [HTI](https://github.com/GIDSOpenStandaarden/GIDS-HTI-Protocol/blob/fhir-2-fields/HTI_2.0.md)    | Launch of modules                      |
+| [FHIR R4](https://hl7.org/fhir/R4/)                                                              | Exchange of information                |
+| [FHIR R4 Rest API](https://hl7.org/fhir/R4/http.html)                                            | API interaction with FHIR resources    |
+| [SMART on FHIR app launch](https://hl7.org/fhir/smart-app-launch/app-launch.html)                | Launch of modules                      |
+| [SMART on FHIR backend services](https://hl7.org/fhir/smart-app-launch/backend-services.html)    | Identification of client applications  |
+| [OAuth 2.0 Client Credentials Grant](https://datatracker.ietf.org/doc/html/rfc6749#section-4.4)  | Identification of client applications  |
+
+ The parts that are custom defined for Koppeltaal 2.0 are:
+ * The security model and authorization rules
+ * The combination of HTI and SMART on FHIR app launch
+
 
 ## Security and permission model
 
@@ -91,23 +110,67 @@ Standards and specifications involved:
 ### Lifecycle entities
 The lifecycle of entities are managed by either the `active` field or the `status` field of the entity.
 
-| Resource Type | Profile | Usage                                                   |
-|---------------|---------|---------------------------------------------------------|
-| Organization  | active  | true, The organization's record is in active use.       |
-|               |         | false, The organization's record is not in active use.  |
-| Device        | status  |                                                         |
-| Patient       | active  |                                                         |
-| CareTeam      | status  |                                                         |
-| Practitioner  | active  |                                                         |
-| Task          | status  |                                                         |
-| Endpoint      | status  |                                                         |
-| Subscription  | status  |                                                         |
+| Resource Type         | Profile | Usage                                                                                                                                                                                                                                             |
+|-----------------------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Organization`        | active  | `true`, The organization's record is in active use.                                                                                                                                                                                               |
+|                       |         | `false`, The organization's record is not in active use.                                                                                                                                                                                          |
+| `Device`              | status  | `active`, the device is available for use.                                                                                                                                                                                                        |
+|                       |         | `inactive`, The device is no longer available for use.                                                                                                                                                                                            |
+|                       |         | `entered-in-error`,The device was entered in error and voided.                                                                                                                                                                                    |
+|                       |         | `unknown`, The status of the device has not been determined.                                                                                                                                                                                      |
+| `Patient`             | active  | `true`, The patients record is in active use.                                                                                                                                                                                                     |
+|                       |         | `false`, The patients record is not in active use.                                                                                                                                                                                                |
+| `CareTeam`            | status  | `active`, The care team is currently participating in the coordination and delivery of care                                                                                                                                                       |
+|                       |         | `inactive`, The care team was, but is no longer, participating in the coordination and delivery of care.                                                                                                                                          |
+|                       |         | `proposed`, The care team has been drafted and proposed, but not yet participating in the coordination and delivery of patient care.                                                                                                              |
+|                       |         | `suspended`, The care team is temporarily on hold or suspended and not participating in the coordination and delivery of care.                                                                                                                    |
+|                       |         | `entered-in-error`, The care team should have never existed.                                                                                                                                                                                      |
+| `Practitioner`        | active  | `true`, The practitioner's record is in active use.                                                                                                                                                                                               |
+|                       |         | `false`, The practitioner's record is not in active use.                                                                                                                                                                                          |
+| `Task`                | status  | `draft`, The task is not yet ready to be acted upon.                                                                                                                                                                                              |
+|                       |         | `entered-in-error`, The task should never have existed and is retained only because of the possibility it may have used.                                                                                                                          |
+|                       |         | `ready`, The task is ready to be performed, but no action has yet been taken. Used in place of requested/received/accepted/rejected when request assignment and acceptance is a given.                                                            |
+|                       |         | `in-progress`, The task has been started but is not yet complete.                                                                                                                                                                                 |
+|                       |         | `cancelled`, The task was not completed.                                                                                                                                                                                                          |
+|                       |         | `on-hold`, The task has been started but work has been paused.                                                                                                                                                                                    |
+|                       |         | `failed`, The task was attempted but could not be completed due to some error.                                                                                                                                                                    |
+|                       |         | `completed`, The task has been completed.                                                                                                                                                                                                         | 
+| `Endpoint`            | status  | `active`, This endpoint is expected to be active and can be used.                                                                                                                                                                                 |
+|                       |         | `suspended`, This endpoint is temporarily unavailable.                                                                                                                                                                                            |
+|                       |         | `error`, This endpoint has exceeded connectivity thresholds and is considered in an error state and should no longer be attempted to connect to until corrective action is taken.                                                                 |
+|                       |         | `off`, This endpoint is no longer to be used.                                                                                                                                                                                                     |
+|                       |         | `entered-in-error`, This instance should not have been part of this patient's medical record.                                                                                                                                                     |
+|                       |         | `test`, This endpoint is not intended for production usage.                                                                                                                                                                                       |
+| `Subscription`        | status  | `requested`, The client has requested the subscription, and the server has not yet set it up.                                                                                                                                                     |
+|                       |         | `active`, The subscription is active.                                                                                                                                                                                                             |
+|                       |         | `error`, The server has an error executing the notification.                                                                                                                                                                                      |
+|                       |         | `off`, Too many errors have occurred or the subscription has expired.                                                                                                                                                                             |
+| `ActivityDefinition`  | status  | `draft`, This resource is still under development and is not yet considered to be ready for normal use.                                                                                                                                           |
+|                       |         | `active`, This resource is ready for normal use.                                                                                                                                                                                                  |
+|                       |         | `retired`, This resource has been withdrawn or superseded and should no longer be used.                                                                                                                                                           |
+|                       |         | `unknown`, The authoring system does not know which of the status values currently applies for this resource. Note: This concept is not to be used for "other" - one of the listed statuses is presumed to apply, it's just not known which one.  |
+|                       |         | ``,                                                                                                                                                                                                                                               |
 
 
 #### Deletion
-Explains soft vs hard delete & expunge (MAY)
+The Koppeltaal 2.0 specification discourages the use of deletions in favor of the lifecycle (status and active fields). However, use cases around the right to be forgotten might require the deletion of resources. Therefore the Koppeltaal 2.0 specification does cater for deletions. Some FHIR resources services MAY implement the [&expunge](https://smilecdr.com/docs/fhir_repository/deleting_data.html#expunge) operator.
+
 #### Handling errors and logging
-Explain how the logging works and how errors should be logged.
+The `AuditEvent` entity tracks the audit events in Koppeltaal 2.0 that need to be tracked. Fortunately, most of the events are being managed by the FHIR resource service and security service. As an application developer, most of the burden of creating is thereby taken of your hands. However, in a couple of cases an `AuditEvent` needs to be created. These are:
+ * When initiating a launch
+ * When receiving a launch
+ * When fetching an entity from the FHIR resource service that cannot be processed by your application.
+
+#### Tracing
+The FHIR Rest API makes use of tracing headers in order to be able to link API calls to each other and be able to link API calls to `AuditEvent`s. The fields used to trace the requests are:
+
+| Header             | If missing           | Description                                                                  |
+|--------------------|----------------------|------------------------------------------------------------------------------|
+| `X-Request-ID`       | Generated            | Each request needs a unique identifier, generated if missing.                |
+| `X-Correlation_ID`   | ignored              | The X-Request-ID of the parent request, if any.                              |
+| `X-Trace-id`         | ignored or generated | If provided, this field is passed on to child requests without modification. |
+
+In practice, if an application initiates a request to the FHIR Rest API, no headers need to be provided, although it would be neat if the application would set the `X-Request-ID` header with an UUIDv4 value. The FHIR resource service will generate a `X-Request-ID` header for the request if it not set anyway, and may generate a `X-Trace-id`  header. If that request initiates a Subscription update request, the update request will be executed with a new `X-Request-ID` and the `X-Correlation_ID`  filled with the (generated) `X-Request-ID` and optionally the `X-Trace-id` of the original request that caused the subscription update. The receiving application now needs te be aware of the headers as it will initiate a read request to the FHIR resource service to fetch the updated resources. The request will require a new `X-Request-ID` and the `X-Correlation_ID` needs to be the `X-Request-ID` from the subscription update request. If present, the `X-Trace-id` needs to be copied 'as is'.
 
 ## Get notified on changes
 ### Subscriptions
